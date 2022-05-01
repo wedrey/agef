@@ -1,0 +1,529 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE nta PUBLIC '-//Uppaal Team//DTD Flat System 1.1//EN' 'http://www.it.uu.se/research/group/darts/uppaal/flat-1_2.dtd'>
+<nta>
+	<declaration>/*
+Nota:
+- ga pode solicitar o estado emocional do jogador (a exemplo para personalizar a próxima fase do jogo)
+- fer captura de tempo em tempo o estado emocional do jogador e disponibiliza em um buffer ao ga
+*/
+
+/**########################### constants ###########################**/
+const int BUFFER_SIZE = 5;
+
+/*Python FER library results array*/
+//'emotions': {'angry': 0.23, 'disgust': 0.01, 'fear': 0.12, 'happy': 0.0, 'sad': 0.36, 'surprise': 0.0, 'neutral': 0.28}}]
+const int angry = 1;
+const int disgust = 2;
+const int fear = 3;
+const int happy = 4;
+const int sad = 5;
+const int surprise = 6;
+const int neutral = 7;
+
+
+/**########################### structs ###########################**/
+typedef int[0,7] emotion_t;
+typedef int[0,1] face_detected_t;
+
+//1 = Module FER, 2 = Module GA
+typedef int[0,1] module_t;
+
+/**########################## variables ##########################**/
+module_t m = 0; //module control to run (module 0 or 1)
+int i = 0;
+
+int processed_emotion;
+
+bool consumed = false;
+bool have_assistance = false;
+int len = BUFFER_SIZE;
+int[0,7] buffer[BUFFER_SIZE];
+int[-1,1] emotion_ga_result[BUFFER_SIZE];
+
+
+/**####################### array of emotions for tests #######################**/
+//emotion_t input[BUFFER_SIZE] = {4,2,1,5,7,6,4,3,1,5};
+emotion_t input[BUFFER_SIZE] = {4,2,1,5,7};
+face_detected_t input_face_detected[BUFFER_SIZE] = {1,0,1,1,1};
+//emotion_t input[BUFFER_SIZE] = {3,2,1,6,1};
+//emotion_t input[BUFFER_SIZE] = {4,2};
+
+
+/**############################## channels ##############################**/
+//chan start[module_t], finish[module_t];
+//chan listener_fer, listener_ga;
+//broadcast chan release, ready_consume;
+
+broadcast chan start[module_t], finish[module_t];
+broadcast chan listener_fer, listener_ga;
+urgent broadcast chan release;
+broadcast chan ready_consume;
+
+
+
+/**########################## functions ##########################**/
+
+/*
+checks if the image is a face
+@return bool
+*/
+bool isFaceDetected()
+{
+    return (input_face_detected[i] == 1);
+}
+
+/*
+check the model executed 
+@param input int
+@return bool
+*/
+bool isModel(int im)
+{
+    return (m == im);
+}
+
+/*
+reset buffer with zero value
+@param input int
+@return void
+*/
+void setZero(int i)
+{
+   for (i = len; i &lt; BUFFER_SIZE; i++)
+       buffer[i] = 0;
+}
+
+/*
+buffering representative emotion data
+@param emotion_t
+@return void
+*/
+void producer(emotion_t e, bool fd){
+    if (len &gt;= BUFFER_SIZE)
+        len = 0;
+    
+    if (fd == true)  //if the face is detected in the frame, let's record the id representing the emotion
+        buffer[len]=e;
+    else 
+        buffer[len]=0; //if not, we will write zero to the buffer
+
+    len++;
+    setZero(len);    
+}
+
+/*
+arrow the emotion detect (sad, happy or zero to neutral)
+@param int
+@return void
+*/
+void setDetectedEmotion(int e){      
+    if (e == sad || e == happy)
+    {
+        if (e == sad)
+            processed_emotion = -1;
+        else 
+            processed_emotion = 1;        
+    }
+    else
+        processed_emotion = 0;
+
+    emotion_ga_result[len] = processed_emotion;    
+}
+
+/*
+reset result array
+@return void
+*/
+void resetResultEmotionGa()
+{
+    int i;
+    for (i = 0; i &lt; BUFFER_SIZE; i++)
+        emotion_ga_result[i] = 0;
+ 
+}
+
+/*
+read data from buffer, process and store in result array
+*/
+void consume(){
+    int e = buffer[0];
+    int i = 0;
+    len--;
+    if (len &gt; 0)
+    {
+        while(i &lt; len){
+            buffer[i] = buffer[i+1];
+            i++;
+        }
+    }
+    setZero(i);
+
+    setDetectedEmotion(e); 
+}
+
+/*
+check and set as false, after consuming
+*/
+void chkResetConsume()
+{
+    if (len &gt; 0)
+        consumed =false;
+}
+
+/*
+check and reset modules counter and flag
+*/
+void chkResetModules()
+{
+    if (i &gt;= BUFFER_SIZE)
+    {
+        i=0;
+        m=0;
+    }
+}</declaration>
+	<template>
+		<name>manager</name>
+		<declaration>module_t nextProc()
+{
+    i++;   
+    if (i &gt;= BUFFER_SIZE)
+    {
+        i=0;
+        m=!m;
+    }    
+
+    return m;
+}
+
+bool isModuleValid()
+{
+    return (m &gt;=0 &amp;&amp; m &lt;=1);
+}</declaration>
+		<location id="id0" x="-3085" y="-3077">
+			<name x="-3095" y="-3111">idle</name>
+		</location>
+		<location id="id1" x="-3085" y="-2992">
+			<name x="-3077" y="-3043">select</name>
+			<committed/>
+		</location>
+		<location id="id2" x="-3213" y="-2907">
+			<name x="-3264" y="-2890">process_fer</name>
+		</location>
+		<location id="id3" x="-2949" y="-2907">
+			<name x="-2966" y="-2881">process_ga</name>
+		</location>
+		<location id="id4" x="-3085" y="-2907">
+			<name x="-3111" y="-2890">arbiter</name>
+			<label kind="invariant" x="-3128" y="-2864">isModuleValid()</label>
+			<committed/>
+		</location>
+		<init ref="id0"/>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id3"/>
+			<label kind="guard" x="-3059" y="-2949">isModel(1)</label>
+			<label kind="synchronisation" x="-3059" y="-2924">start[m]!</label>
+		</transition>
+		<transition>
+			<source ref="id4"/>
+			<target ref="id2"/>
+			<label kind="guard" x="-3187" y="-2949">isModel(0)</label>
+			<label kind="synchronisation" x="-3187" y="-2924">start[m]!</label>
+		</transition>
+		<transition>
+			<source ref="id1"/>
+			<target ref="id4"/>
+			<label kind="synchronisation" x="-3085" y="-2975">ready_consume!</label>
+		</transition>
+		<transition>
+			<source ref="id3"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-2941" y="-3026">finish[m]?</label>
+			<label kind="assignment" x="-3051" y="-3128">m:=nextProc(), 
+chkResetConsume()</label>
+			<nail x="-2949" y="-2932"/>
+			<nail x="-2949" y="-3077"/>
+		</transition>
+		<transition>
+			<source ref="id2"/>
+			<target ref="id0"/>
+			<label kind="synchronisation" x="-3281" y="-3034">finish[m]?</label>
+			<label kind="assignment" x="-3272" y="-3128">m:=nextProc(),
+chkResetConsume()</label>
+			<nail x="-3213" y="-2924"/>
+			<nail x="-3213" y="-3077"/>
+		</transition>
+		<transition>
+			<source ref="id0"/>
+			<target ref="id1"/>
+			<label kind="synchronisation" x="-3077" y="-3060">release!</label>
+			<label kind="assignment" x="-3153" y="-3026">have_assistance = false</label>
+		</transition>
+	</template>
+	<template>
+		<name x="5" y="5">fer</name>
+		<declaration>//Face Emotion Recognition (FER)
+
+//Filter
+//Convolution Layers
+//Pooling
+//MPL
+void processFer(){
+   producer(input[i],true);
+}
+
+void unidentifiedFace(){
+   producer(input[i],false);
+}
+</declaration>
+		<location id="id5" x="-2091" y="-2261">
+			<name x="-2116" y="-2295">wait_fer</name>
+		</location>
+		<location id="id6" x="-1938" y="-2261">
+			<name x="-1946" y="-2295">verify_device</name>
+			<committed/>
+		</location>
+		<location id="id7" x="-1938" y="-2116">
+			<name x="-1955" y="-2090">capture_photo</name>
+			<committed/>
+		</location>
+		<location id="id8" x="-2252" y="-2116">
+			<name x="-2311" y="-2090">processed_frame</name>
+			<committed/>
+		</location>
+		<location id="id9" x="-2252" y="-2261">
+			<name x="-2295" y="-2270">idle</name>
+		</location>
+		<init ref="id9"/>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id8"/>
+			<label kind="guard" x="-2142" y="-2074">!isFaceDetected()</label>
+			<label kind="assignment" x="-2142" y="-2031">unidentifiedFace()</label>
+			<nail x="-2091" y="-2031"/>
+		</transition>
+		<transition>
+			<source ref="id7"/>
+			<target ref="id8"/>
+			<label kind="guard" x="-2142" y="-2142">isFaceDetected()</label>
+			<label kind="assignment" x="-2125" y="-2108">processFer()</label>
+		</transition>
+		<transition>
+			<source ref="id9"/>
+			<target ref="id5"/>
+			<label kind="guard" x="-2193" y="-2253">isModel(0)</label>
+			<label kind="synchronisation" x="-2202" y="-2287">release?</label>
+		</transition>
+		<transition>
+			<source ref="id8"/>
+			<target ref="id9"/>
+			<label kind="synchronisation" x="-2312" y="-2158">finish[m]!</label>
+		</transition>
+		<transition>
+			<source ref="id6"/>
+			<target ref="id7"/>
+		</transition>
+		<transition>
+			<source ref="id5"/>
+			<target ref="id6"/>
+			<label kind="synchronisation" x="-2048" y="-2287">start[m]?</label>
+			<nail x="-2014" y="-2261"/>
+		</transition>
+	</template>
+	<template>
+		<name>ga</name>
+		<declaration>//Game Assistance
+void processGa()
+{
+    chkResetModules();
+    consume();
+}
+
+</declaration>
+		<location id="id10" x="-2014" y="-1894">
+			<name x="-2040" y="-1878">wait_ga</name>
+		</location>
+		<location id="id11" x="-1870" y="-1895">
+			<name x="-1930" y="-1929">consume_data</name>
+			<committed/>
+		</location>
+		<location id="id12" x="-1870" y="-1804">
+			<name x="-1912" y="-1787">process_analyze</name>
+			<committed/>
+		</location>
+		<location id="id13" x="-2150" y="-1895">
+			<name x="-2160" y="-1929">idle</name>
+		</location>
+		<location id="id14" x="-2014" y="-1802">
+			<name x="-2074" y="-1785">update_assistance</name>
+			<committed/>
+		</location>
+		<init ref="id13"/>
+		<transition>
+			<source ref="id14"/>
+			<target ref="id13"/>
+			<label kind="synchronisation" x="-2209" y="-1844">finish[m]!</label>
+			<nail x="-2150" y="-1803"/>
+		</transition>
+		<transition>
+			<source ref="id12"/>
+			<target ref="id14"/>
+			<label kind="assignment" x="-1972" y="-1828">processGa()</label>
+		</transition>
+		<transition>
+			<source ref="id13"/>
+			<target ref="id10"/>
+			<label kind="guard" x="-2124" y="-1921">isModel(1)</label>
+			<label kind="synchronisation" x="-2116" y="-1895">release?</label>
+		</transition>
+		<transition>
+			<source ref="id11"/>
+			<target ref="id12"/>
+		</transition>
+		<transition>
+			<source ref="id10"/>
+			<target ref="id11"/>
+			<label kind="synchronisation" x="-1997" y="-1923">start[m]?</label>
+		</transition>
+	</template>
+	<template>
+		<name>sgcr</name>
+		<declaration>//Game Consumer
+int j;
+bool canConsume()
+{    
+    return (len == 0 &amp;&amp; consumed==false);
+}
+
+bool haveAssistance()
+{
+    have_assistance = false;
+    
+    for (j = 0; j &lt; BUFFER_SIZE; j++)
+    {
+        if (emotion_ga_result[j] == 1 or emotion_ga_result[j] == -1)
+            have_assistance = true;
+    }
+    
+    return have_assistance;
+}
+
+void gameConsumer()
+{
+    if (haveAssistance())
+        consumed = true;   
+
+    resetResultEmotionGa();   
+}</declaration>
+		<location id="id15" x="-1207" y="-986">
+			<name x="-1217" y="-1020">idle</name>
+		</location>
+		<location id="id16" x="-841" y="-986">
+		</location>
+		<init ref="id15"/>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id15"/>
+			<label kind="guard" x="-1069" y="-1011">!canConsume()</label>
+		</transition>
+		<transition>
+			<source ref="id16"/>
+			<target ref="id15"/>
+			<label kind="guard" x="-1070" y="-969">canConsume()</label>
+			<label kind="synchronisation" x="-1070" y="-918">ready_consume?</label>
+			<label kind="assignment" x="-1070" y="-935">gameConsumer()</label>
+			<nail x="-926" y="-935"/>
+			<nail x="-1105" y="-935"/>
+		</transition>
+		<transition>
+			<source ref="id15"/>
+			<target ref="id16"/>
+			<label kind="synchronisation" x="-1079" y="-1062">ready_consume?</label>
+			<nail x="-1113" y="-1037"/>
+			<nail x="-926" y="-1037"/>
+		</transition>
+	</template>
+	<system>//fer = facial emotion recognition
+//ga = game assistance
+//gc = game consume
+system manager, fer, ga, sgcr;</system>
+	<queries>
+		<query>
+			<formula>A[] not deadlock</formula>
+			<comment>deadlock free</comment>
+		</query>
+		<query>
+			<formula>//// G1:AssistanceProvided  ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>A[] (ga.consume_data imply ga.update_assistance)</formula>
+			<comment>Whenever the Game Assistant consumes any data, it implies that it will provide assistance to the Serious Game.</comment>
+		</query>
+		<query>
+			<formula>//// G2: RecognitionFacialEmotions  ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>isFaceDetected() --&gt; (fer.processed_frame)</formula>
+			<comment>If a face is detected, eventually recognition of facial muscles will be processed.</comment>
+		</query>
+		<query>
+			<formula>//// G3: UpdateGameAssistent  ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>A[] (emotion_ga_result[i] == sad or emotion_ga_result[i] == happy) imply (consumed==true)</formula>
+			<comment>Whenever there are significant changes in the patient's emotion (sad or happy), you must provide assistance to the Serious Game</comment>
+		</query>
+		<query>
+			<formula>//// G4: R2Achieved  ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>fer.verify_device --&gt; fer.capture_photo</formula>
+			<comment>Capture frames (photos) of the patient's face during game activities</comment>
+		</query>
+		<query>
+			<formula>//// G5:  R3Achieved  ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>fer.capture_photo --&gt; isFaceDetected()</formula>
+			<comment>Detectar  e recortar a bounding boxe da face do paciente</comment>
+		</query>
+		<query>
+			<formula>//// G6:  R4Achieved ////</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>isFaceDetected() --&gt; ga.update_assistance</formula>
+			<comment>If the patient's face is detected, it implies that the emotion is processed.</comment>
+		</query>
+		<query>
+			<formula>======================================================================================== verificar ===========================================</formula>
+			<comment></comment>
+		</query>
+		<query>
+			<formula>A&lt;&gt; isFaceDetected() imply (processed_emotion==-1 or processed_emotion==1 or processed_emotion==0)</formula>
+			<comment>If the patient's face is detected, it implies that eventually serious game assistance is provided.</comment>
+		</query>
+		<query>
+			<formula>A&lt;&gt; manager.select imply (fer.processed_frame or ga.update_assistance)</formula>
+			<comment>Whether the manager runs, implies or game assistance is processed or assistance update is stored and made available</comment>
+		</query>
+		<query>
+			<formula>fer.verify_device --&gt; fer.processed_frame</formula>
+			<comment>If Webcam Device is selected, eventually the frame will be processed</comment>
+		</query>
+		<query>
+			<formula>E&lt;&gt; consumed==1</formula>
+			<comment>Serious Game can consume AGEF Play Assistance
+</comment>
+		</query>
+		<query>
+			<formula>Pr[&lt;=1](&lt;&gt; consumed ==1)</formula>
+			<comment></comment>
+		</query>
+	</queries>
+</nta>
