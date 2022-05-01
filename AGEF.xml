@@ -446,7 +446,14 @@ void gameConsumer()
 	<system>//fer = facial emotion recognition
 //ga = game assistance
 //gc = game consume
-system manager, fer, ga, sgcr;</system>
+system manager, fer, ga, sgcr;
+
+gantt {
+  M: 
+     manager.process_fer -&gt; 6, // yellow
+     manager.process_ga -&gt; 1; // green
+
+}</system>
 	<queries>
 		<query>
 			<formula>A[] not deadlock</formula>
@@ -465,7 +472,7 @@ system manager, fer, ga, sgcr;</system>
 			<comment></comment>
 		</query>
 		<query>
-			<formula>isFaceDetected() --&gt; (fer.processed_frame)</formula>
+			<formula>isFaceDetected() --&gt; fer.processed_frame</formula>
 			<comment>If a face is detected, eventually recognition of facial muscles will be processed.</comment>
 		</query>
 		<query>
@@ -497,33 +504,20 @@ system manager, fer, ga, sgcr;</system>
 			<comment></comment>
 		</query>
 		<query>
-			<formula>isFaceDetected() --&gt; ga.update_assistance</formula>
+			<formula>isFaceDetected() --&gt; fer.processed_frame</formula>
 			<comment>If the patient's face is detected, it implies that the emotion is processed.</comment>
 		</query>
 		<query>
-			<formula>======================================================================================== verificar ===========================================</formula>
+			<formula>========== Others ==========</formula>
 			<comment></comment>
 		</query>
 		<query>
-			<formula>A&lt;&gt; isFaceDetected() imply (processed_emotion==-1 or processed_emotion==1 or processed_emotion==0)</formula>
+			<formula>A&lt;&gt; isFaceDetected() imply (emotion_ga_result[i] == sad or emotion_ga_result[i] == happy)</formula>
 			<comment>If the patient's face is detected, it implies that eventually serious game assistance is provided.</comment>
 		</query>
 		<query>
-			<formula>A&lt;&gt; manager.select imply (fer.processed_frame or ga.update_assistance)</formula>
-			<comment>Whether the manager runs, implies or game assistance is processed or assistance update is stored and made available</comment>
-		</query>
-		<query>
-			<formula>fer.verify_device --&gt; fer.processed_frame</formula>
+			<formula>A&lt;&gt; fer.verify_device imply fer.processed_frame</formula>
 			<comment>If Webcam Device is selected, eventually the frame will be processed</comment>
-		</query>
-		<query>
-			<formula>E&lt;&gt; consumed==1</formula>
-			<comment>Serious Game can consume AGEF Play Assistance
-</comment>
-		</query>
-		<query>
-			<formula>Pr[&lt;=1](&lt;&gt; consumed ==1)</formula>
-			<comment></comment>
 		</query>
 	</queries>
 </nta>
